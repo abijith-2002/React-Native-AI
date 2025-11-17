@@ -2,6 +2,7 @@
   "name": "reactnative",
   "version": "1.0.0",
   "main": "index.ts",
+  "private": true,
   "scripts": {
     "start": "HOST_MODE=tunnel node ./scripts/start-expo.js --port 3030",
     "start:tunnel": "HOST_MODE=tunnel node ./scripts/start-expo.js --port 3030",
@@ -34,6 +35,5 @@
     "jiti": "^2.5.1",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.40.0"
-  },
-  "private": true
+  }
 }

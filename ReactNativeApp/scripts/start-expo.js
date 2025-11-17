@@ -16,9 +16,10 @@
  *   EXPO_PUBLIC_FEATURE_FLAGS, EXPO_PUBLIC_EXPERIMENTS_ENABLED: passed through in env
  */
 
-const { spawn } = require('node:child_process');
-const http = require('node:http');
-const process_ = require('node:process');
+const { spawn } = require('node:child_process'); // CommonJS require to avoid ESM issues
+const http = require('node:http'); // CommonJS require
+const process_ = require('node:process'); // CommonJS require
+const os = require('node:os');
 
 const DEFAULT_PORT = 3030;
 const EXPO_INTERNAL_FALLBACK_PORT = 3031; // Internal port for Expo so 3030 can be used by healthcheck
@@ -64,6 +65,7 @@ function startHealthcheckServer(port, path) {
   });
 
   try {
+    // Ensure we don't crash if something else holds the port; just warn
     server.listen(port, '0.0.0.0');
   } catch (e) {
     console.warn(`[healthcheck] Listen threw: ${String(e && (e.message || e))}`);
@@ -99,6 +101,7 @@ function resolveHostMode() {
  * sanitizeIncomingArgs
  * Remove any invalid or conflicting host/port flags from incoming CLI args.
  * Also remove any unknown flags that preview might inject which could cause Expo to error.
+ * Explicitly ensure "--host 0.0.0.0" is dropped or mapped to 'tunnel'.
  */
 function sanitizeIncomingArgs(argv) {
   const sanitized = [];
@@ -108,16 +111,27 @@ function sanitizeIncomingArgs(argv) {
 
     // Drop paired flags and their value
     if (dropNext.has(token)) {
+      const next = argv[i + 1];
+      if (token === '--host' && next === '0.0.0.0') {
+        // consume and skip invalid host value
+        i += 1;
+        continue;
+      }
       i += 1;
       continue;
     }
 
-    // Drop inline assignments
-    if (typeof token === 'string' && (token.startsWith('--host=') || token.startsWith('--port='))) {
-      continue;
+    // Drop inline assignments and any 0.0.0.0 assignment
+    if (typeof token === 'string') {
+      if (token.startsWith('--host=') || token.startsWith('--port=')) {
+        continue;
+      }
+      if (token === '--host=0.0.0.0' || token === '--host=0.0.0.0') {
+        continue;
+      }
     }
 
-    // Drop preview-only flags that Expo doesn't recognize
+    // Drop preview-only flags that Expo doesn't recognize or handle differently
     if (token === '--non-interactive' || token === '--ci') {
       continue;
     }
@@ -170,11 +184,12 @@ function run() {
   const args = buildArgs();
   const finalArgs = ['expo', ...args, ...incoming];
 
+  console.log(`[startup] Node ${process_.version} on ${os.platform()}/${os.arch()}`);
   console.log(`[startup] Running: npx ${finalArgs.join(' ')}`);
   console.log(`[startup] Healthcheck path: http://0.0.0.0:${DEFAULT_PORT}${healthPath}`);
   console.log(`[startup] Host mode: ${args[args.indexOf('--host') + 1]}`);
   console.log(`[startup] Expo internal port: ${EXPO_INTERNAL_FALLBACK_PORT}`);
-  console.log('[startup] Note: Port 3030 is reserved for healthcheck only; Expo runs on an internal port.');
+  console.log('[startup] Note: Port 3030 is reserved for healthcheck only; Expo runs on an internal port (tunnel by default).');
 
   const child = spawn('npx', finalArgs, {
     stdio: 'inherit',
@@ -186,6 +201,7 @@ function run() {
     shell: false,
   });
 
+  // Ensure process stays alive with child; propagate exit/signal
   child.on('exit', (code, signal) => {
     if (signal) {
       try {
@@ -196,6 +212,11 @@ function run() {
     } else {
       process_.exit(code ?? 0);
     }
+  });
+
+  child.on('error', (err) => {
+    console.error('[startup] Failed to spawn Expo via npx:', err && err.message ? err.message : err);
+    process_.exit(1);
   });
 }
 

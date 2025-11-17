@@ -15,7 +15,7 @@ These call scripts/start-expo.js which:
 - Maps EXPO_HOST/HOST=0.0.0.0 to a valid Expo host (tunnel).
 - Honors HOST_MODE=lan|tunnel|localhost if set (highest precedence).
 - Defaults to tunnel mode when not specified, to support preview across networks/Android devices.
-- Sanitizes any extra `--host` and `--port` arguments injected by the preview system and re-injects valid ones.
+- Sanitizes any extra `--host` and `--port` arguments injected by the preview system and re-injects valid ones (e.g., strips `--host 0.0.0.0` and enforces `--host tunnel`).
 - Starts a lightweight standalone healthcheck server on http://0.0.0.0:3030/healthz (configurable via EXPO_PUBLIC_HEALTHCHECK_PATH) that always returns 200. It logs:
   - "[healthcheck] Listening on http://0.0.0.0:3030/healthz"
   - "[healthcheck] Ready signal is up (HTTP 200)."
@@ -27,6 +27,10 @@ Environment variables (see .env.example):
 - HOST_MODE=lan|tunnel|localhost
 - EXPO_HOST / HOST (if '0.0.0.0', wrapper maps to 'tunnel')
 - EXPO_PUBLIC_TRUST_PROXY, EXPO_PUBLIC_LOG_LEVEL, EXPO_PUBLIC_HEALTHCHECK_PATH, etc.
+
+Port allocation:
+- Port 3030: health server (binds to 0.0.0.0). Should always respond with HTTP 200 on /healthz.
+- Port 3031: Expo dev server (internal). No conflict with 3030, so preview can check 3030 for readiness.
 
 Android build in CI/preview:
 - The default `npm run build` is a no-op to avoid Gradle errors in environments without a generated android/ folder.
