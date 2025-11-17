@@ -15,7 +15,7 @@ These call scripts/start-expo.js which:
 - Maps EXPO_HOST/HOST=0.0.0.0 to a valid Expo host (tunnel).
 - Honors HOST_MODE=lan|tunnel|localhost if set (highest precedence).
 - Defaults to tunnel mode when not specified, to support preview across networks/Android devices.
-- Sanitizes any extra `--host` and `--port` arguments injected by the preview system and re-injects valid ones (e.g., strips `--host 0.0.0.0` and enforces `--host tunnel`).
+- Sanitizes any extra `--host` and `--port` arguments injected by the preview system (e.g., strips `--host 0.0.0.0`) and enforces a valid host. The wrapper never passes `--host 0.0.0.0` to Expo.
 - Starts a lightweight standalone healthcheck server on http://0.0.0.0:3030/healthz (configurable via EXPO_PUBLIC_HEALTHCHECK_PATH) that always returns 200. It logs:
   - "[healthcheck] Listening on http://0.0.0.0:3030/healthz"
   - "[healthcheck] Ready signal is up (HTTP 200)."
