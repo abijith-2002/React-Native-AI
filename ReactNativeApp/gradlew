@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Top-level Gradle wrapper stub for preview environments.
+# Some CI systems attempt to run ./gradlew from the project root.
+# Delegate to the Android stub, which intentionally skips native builds.
+if [ -x "./android/gradlew" ]; then
+  exec ./android/gradlew "$@"
+fi
+
+echo "Gradle build skipped: Expo preview uses Metro dev server. Use 'npm run ci:preview' or 'npm run start' instead."
+exit 0

@@ -12,6 +12,12 @@ This app uses Expo with Metro bundler. The preview environment expects the dev s
 - Do not run Gradle for preview; native projects are not generated until `expo prebuild`.
 - The `npm run build` script is a no-op message for preview environments to avoid triggering Gradle inadvertently.
 
+## Host and binding
+- Expo CLI must be passed a valid host value: `--host lan` (accepted: `lan|tunnel|localhost`).
+- Metro still binds to `0.0.0.0` internally so external health checks can connect. This is controlled via:
+  - metro.config.js (server config and port)
+  - EXPO_DEV_HOST env (defaults to `0.0.0.0`) consumed by app.config.js
+
 ## Healthcheck
 The Metro server exposes a simple healthcheck endpoint at:
 - Path: `/healthz` (override with EXPO_PUBLIC_HEALTHCHECK_PATH)

@@ -13,9 +13,10 @@ function getMetroConfig(projectRoot) {
 
   // Ensure the server listens on the interface and port expected by the preview
   config.server = config.server || {};
+  // Port selection; binding to 0.0.0.0 is handled by Expo/Metro when EXPO_DEV_HOST=0.0.0.0
   config.server.port = Number(process.env.METRO_PORT || 3030);
   config.server.enhanceMiddleware = (middleware) => {
-    // Add a simple healthcheck route. Defaults to /healthz if not explicitly provided.
+    // Healthcheck route served by Metro (defaults to /healthz). Port remains 3030 by default.
     const healthPath = process.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
     return (req, res, next) => {
       if (req.url && req.url.startsWith(healthPath)) {

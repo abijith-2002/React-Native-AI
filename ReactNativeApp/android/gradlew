@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 # Stub gradle wrapper for preview environments. This avoids CI failures when a native build is not intended.
+# This file may be called directly, or via the top-level ./gradlew delegator.
 echo "Gradle build skipped: Expo preview uses Metro dev server. Use 'npm run ci:preview' or 'npm run start'."
 exit 0

@@ -44,9 +44,8 @@ function getAppConfig() {
       // Metro port is controlled in metro.config.js explicitly (3030).
       // Here, we ensure the host is accessible from container networks.
       devServer: {
-        // LAN mode ensures external devices/health checks can reach the dev server.
-        // Expo CLI respects REACT_NATIVE_PACKAGER_HOSTNAME and related envs when needed,
-        // but we set host to 0.0.0.0 explicitly.
+        // Expo CLI must receive --host lan|tunnel|localhost. We use '--host lan' in scripts.
+        // Internally, we keep EXPO_DEV_HOST defaulting to 0.0.0.0 so Metro binds on all interfaces.
         host: process.env.EXPO_DEV_HOST || '0.0.0.0',
       },
       extra: {
