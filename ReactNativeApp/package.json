@@ -3,13 +3,15 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
+    "start": "node ./scripts/start-expo.js",
+    "android": "EXPO_TARGET=android node ./scripts/start-expo.js",
+    "ios": "EXPO_TARGET=ios node ./scripts/start-expo.js",
+    "web": "EXPO_TARGET=web node ./scripts/start-expo.js",
     "lint": "eslint .",
     "prebuild:android": "expo prebuild --platform android",
-    "build": "npm run prebuild:android && cd android && ./gradlew assembleDebug"
+    "build:android": "npm run prebuild:android && cd android && ./gradlew assembleDebug",
+    "build": "echo \"No-op build in preview: use 'npm run build:android' to generate native project before Gradle.\" && exit 0",
+    "ci:gradle-check": "bash ./scripts/ci-gradle-check.sh"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",

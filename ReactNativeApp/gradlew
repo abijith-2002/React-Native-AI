@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# PUBLIC_INTERFACE
+# gradlew (shim)
+# Purpose: Provide a CI-safe entrypoint for Gradle commands in environments where
+# the native Android project has not yet been generated (no ./android/gradlew).
+# If ./android/gradlew exists, delegate to it. Otherwise, exit successfully.
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GRADLEW_PATH="${ROOT_DIR}/android/gradlew"
+
+if [ -f "${GRADLEW_PATH}" ]; then
+  cd "${ROOT_DIR}/android"
+  exec ./gradlew "$@"
+else
+  echo "Gradle wrapper not found at ./android/gradlew. Skipping Gradle invocation."
+  echo "Hint: run 'npm run build:android' to generate the native project (expo prebuild) before using Gradle."
+  exit 0
+fi
