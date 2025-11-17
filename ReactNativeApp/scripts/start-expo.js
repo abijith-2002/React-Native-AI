@@ -4,19 +4,20 @@
  * start-expo.js
  * Wrapper that normalizes host options for "expo start" in preview/CI environments.
  * - Ensures Expo receives a valid host value (lan|tunnel|localhost).
- * - Maps invalid inputs like "0.0.0.0" to "lan".
+ * - Maps invalid inputs like "0.0.0.0" to a supported mode.
  * - Ignores any extra CLI --host passed by the preview system and re-injects a valid one.
  * - Forces Expo to bind on port 3030 and enables web UI to expose an HTTP listener for readiness checks.
  *
  * Environment variables:
  * - HOST_MODE: "lan" | "tunnel" | "localhost" (highest precedence if valid)
- * - EXPO_HOST or HOST: if "0.0.0.0", will be normalized to "lan"; if valid, will be honored
+ * - EXPO_HOST or HOST: if "0.0.0.0", will be normalized; if valid, will be honored
  * - EXPO_PUBLIC_TRUST_PROXY, EXPO_PUBLIC_LOG_LEVEL, EXPO_PUBLIC_HEALTHCHECK_PATH,
  *   EXPO_PUBLIC_FEATURE_FLAGS, EXPO_PUBLIC_EXPERIMENTS_ENABLED: passed through in env
  */
 
-import { spawn } from 'node:child_process';
-import http from 'node:http';
+const { spawn } = require('node:child_process');
+const http = require('node:http');
+const process_ = require('node:process');
 
 const DEFAULT_PORT = 3030;
 
@@ -26,21 +27,20 @@ const DEFAULT_PORT = 3030;
  * - If Expo already owns the port, we log and rely on Expo's listener; we also
  *   keep the parent process alive via the spawned Expo child.
  */
+// PUBLIC_INTERFACE
 function startHealthcheckServer(port, path) {
-  const healthPath = path || process.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
+  const healthPath = path || process_.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
 
   const server = http.createServer(async (req, res) => {
-    const url = req.url || '/';
+    const url = (req && req.url) || '/';
     const isHealth = url === healthPath || url.startsWith(healthPath + '?');
 
     if (isHealth) {
-      // Return 200 quickly to mark readiness
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok' }));
       return;
     }
 
-    // Minimal default route
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Expo Dev Server is starting...\n');
   });
@@ -49,7 +49,6 @@ function startHealthcheckServer(port, path) {
     const msg = String(err && (err.message || err));
     if (msg.includes('EADDRINUSE')) {
       console.warn(`[healthcheck] Port ${port} already in use; assuming Expo dev server bound successfully.`);
-      // Nothing else to do; Expo will keep the process alive and respond.
       return;
     }
     console.warn(`[healthcheck] Could not bind on port ${port}: ${msg}`);
@@ -66,14 +65,22 @@ function startHealthcheckServer(port, path) {
   return server;
 }
 
+/**
+ * Resolve the host mode for Expo start.
+ * Priority:
+ * 1) HOST_MODE env if valid
+ * 2) EXPO_HOST/HOST (map "0.0.0.0" to "tunnel" to avoid Expo assertion)
+ * 3) default "tunnel"
+ */
+// PUBLIC_INTERFACE
 function resolveHostMode() {
   const allowed = new Set(['lan', 'tunnel', 'localhost']);
 
-  const explicit = (process.env.HOST_MODE || '').trim();
+  const explicit = (process_.env.HOST_MODE || '').trim();
   if (explicit && allowed.has(explicit)) return explicit;
 
-  const envHostRaw = (process.env.EXPO_HOST || process.env.HOST || '').trim();
-  if (envHostRaw === '0.0.0.0') return 'lan';
+  const envHostRaw = (process_.env.EXPO_HOST || process_.env.HOST || '').trim();
+  if (envHostRaw === '0.0.0.0') return 'tunnel';
   if (allowed.has(envHostRaw)) return envHostRaw;
 
   return 'tunnel';
@@ -82,6 +89,7 @@ function resolveHostMode() {
 /**
  * Remove any invalid or conflicting host/port flags from incoming CLI args.
  */
+// PUBLIC_INTERFACE
 function sanitizeIncomingArgs(argv) {
   const sanitized = [];
   for (let i = 0; i < argv.length; i++) {
@@ -90,7 +98,7 @@ function sanitizeIncomingArgs(argv) {
       i += 1;
       continue;
     }
-    if (token.startsWith('--host=') || token.startsWith('--port=')) {
+    if (typeof token === 'string' && (token.startsWith('--host=') || token.startsWith('--port='))) {
       continue;
     }
     if (token === '--non-interactive' || token === '--ci') {
@@ -101,6 +109,7 @@ function sanitizeIncomingArgs(argv) {
   return sanitized;
 }
 
+// PUBLIC_INTERFACE
 function buildArgs() {
   const args = ['start'];
 
@@ -109,24 +118,25 @@ function buildArgs() {
 
   args.push('--port', String(DEFAULT_PORT));
 
-  // Ensure HTTP listener exists
-  if (process.env.EXPO_TARGET === 'android') args.push('--android');
-  if (process.env.EXPO_TARGET === 'ios') args.push('--ios');
+  // Ensure HTTP listener exists (keep expo UI and web available)
+  if (process_.env.EXPO_TARGET === 'android') args.push('--android');
+  if (process_.env.EXPO_TARGET === 'ios') args.push('--ios');
   args.push('--web');
 
-  const logLevel = (process.env.EXPO_PUBLIC_LOG_LEVEL || '').trim();
+  const logLevel = (process_.env.EXPO_PUBLIC_LOG_LEVEL || '').trim();
   if (logLevel) {
-    process.env.EXPO_DEBUG = logLevel === 'debug' ? '1' : process.env.EXPO_DEBUG;
+    process_.env.EXPO_DEBUG = logLevel === 'debug' ? '1' : process_.env.EXPO_DEBUG;
   }
 
   return args;
 }
 
+// PUBLIC_INTERFACE
 function run() {
-  const healthPath = process.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
+  const healthPath = process_.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
   startHealthcheckServer(DEFAULT_PORT, healthPath);
 
-  const incoming = sanitizeIncomingArgs(process.argv.slice(2));
+  const incoming = sanitizeIncomingArgs(process_.argv.slice(2));
   const args = buildArgs();
   const finalArgs = ['expo', ...args, ...incoming];
 
@@ -137,19 +147,23 @@ function run() {
   const child = spawn('npx', finalArgs, {
     stdio: 'inherit',
     env: {
-      ...process.env,
-      TRUST_PROXY: process.env.EXPO_PUBLIC_TRUST_PROXY === 'true' ? '1' : process.env.TRUST_PROXY,
-      CI: process.env.CI || 'true',
+      ...process_.env,
+      TRUST_PROXY: process_.env.EXPO_PUBLIC_TRUST_PROXY === 'true' ? '1' : process_.env.TRUST_PROXY,
+      CI: process_.env.CI || 'true',
     },
     shell: false,
   });
 
-  // Keep process alive until child exits
   child.on('exit', (code, signal) => {
     if (signal) {
-      process.kill(process.pid, signal);
+      try {
+        process_.kill(process_.pid, signal);
+      } catch {
+        // Fall back to exit code 0 when forwarding signal fails
+        process_.exit(0);
+      }
     } else {
-      process.exit(code ?? 0);
+      process_.exit(code ?? 0);
     }
   });
 }
