@@ -1,6 +1,6 @@
 # Expo Startup and Build Notes
 
-This project uses a wrapper to normalize Expo's host option in preview/CI environments, ensuring the app starts even if a preview system passes an invalid `--host 0.0.0.0`.
+This project uses a wrapper to normalize Expo's host option in preview/CI environments, ensuring the app starts even if a preview system passes an invalid `--host 0.0.0.0`. It also configures the dev server to bind to port 3030 and exposes a readiness healthcheck that the preview system can detect.
 
 - Start commands:
   - npm start (defaults to tunnel mode)
@@ -15,8 +15,9 @@ These call scripts/start-expo.js which:
 - Maps EXPO_HOST/HOST=0.0.0.0 to a valid Expo host.
 - Honors HOST_MODE=lan|tunnel|localhost if set (highest precedence).
 - Defaults to tunnel mode when not specified, to support preview across networks/Android devices.
-- Sanitizes any extra `--host` arguments injected by the preview system (e.g., `--host 0.0.0.0`) and re-injects a valid one.
-- Avoids passing an invalid `--host` to Expo, preventing startup failures.
+- Sanitizes any extra `--host` and `--port` arguments injected by the preview system and re-injects valid ones.
+- Forces `--port 3030` and enables `--web` so the preview can detect an HTTP listener on 3030.
+- Starts a lightweight healthcheck on http://localhost:3030/healthz (configurable via EXPO_PUBLIC_HEALTHCHECK_PATH).
 
 Environment variables (see .env.example):
 - HOST_MODE=lan|tunnel|localhost
