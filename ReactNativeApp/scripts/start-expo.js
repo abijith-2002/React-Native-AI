@@ -131,7 +131,7 @@ function sanitizeIncomingArgs(argv) {
     }
 
     // Drop preview-only flags that may confuse expo
-    if (token === '--non-interactive' || token === '--ci') continue;
+    if (token === '--ci') continue;
 
     sanitized.push(token);
   }
@@ -139,7 +139,13 @@ function sanitizeIncomingArgs(argv) {
 }
 
 // PUBLIC_INTERFACE
-function ensureNgrokDependency() {
+function ensureNgrokDependencyIfTunnel() {
+  const hostMode = resolveHostMode();
+  // Only ensure ngrok when using tunnel
+  if (hostMode !== 'tunnel' && !isCIMode()) {
+    console.log(`[deps] Host mode is "${hostMode}". Skipping @expo/ngrok ensure.`);
+    return;
+  }
   const expectedPath = path.join(process_.cwd(), 'node_modules', '@expo', 'ngrok');
   if (fs.existsSync(expectedPath)) {
     console.log('[deps] @expo/ngrok is present.');
@@ -147,7 +153,6 @@ function ensureNgrokDependency() {
   }
   console.log('[deps] @expo/ngrok not found. Installing devDependency for tunnel support (non-interactive)...');
 
-  // Force non-interactive installation so CI does not hang
   const env = {
     ...process_.env,
     CI: process_.env.CI || 'true',
@@ -155,6 +160,8 @@ function ensureNgrokDependency() {
     EXPO_NO_PROMPT: '1',
     EXPO_CLI_NO_PROMPT: '1',
     npm_config_yes: 'true',
+    npm_config_audit: 'false',
+    npm_config_fund: 'false',
   };
 
   const install = spawnSync('npm', ['i', '-D', '@expo/ngrok@^4.1.0'], {
@@ -173,7 +180,9 @@ function buildArgs() {
   const args = ['start'];
 
   const hostMode = resolveHostMode();
-  args.push('--host', hostMode);
+  // Sanitize any host; force tunnel if preview tried 0.0.0.0
+  const finalHost = hostMode === 'localhost' || hostMode === 'lan' ? hostMode : 'tunnel';
+  args.push('--host', finalHost);
 
   // Reserve 3030 for health server; run expo on internal port
   args.push('--port', String(EXPO_INTERNAL_FALLBACK_PORT));
@@ -201,22 +210,31 @@ function run() {
   const healthPath = process_.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
   startHealthcheckServer(DEFAULT_PORT, healthPath);
 
-  // Ensure ngrok is present for tunnel mode and reset caches
-  ensureNgrokDependency();
+  // Ensure ngrok is present for tunnel mode BEFORE spawning expo and reset caches
+  ensureNgrokDependencyIfTunnel();
   resetMetroAndExpoCaches();
+
+  // Enforce non-interactive environment for both install and expo
+  process_.env.EXPO_CLI_NO_PROMPT = '1';
+  process_.env.EXPO_NO_INTERACTIVE = '1';
+  process_.env.EXPO_NO_TELEMETRY = '1';
+  process_.env.EXPO_NO_PROMPT = '1';
+  process_.env.CI = process_.env.CI || 'true';
 
   const incoming = sanitizeIncomingArgs(process_.argv.slice(2));
   const args = buildArgs();
   const finalArgs = ['expo', ...args, ...incoming];
 
   // Force tunnel host in CI if somehow misconfigured
-  if (isCIMode()) {
-    const hostIdx = finalArgs.indexOf('--host');
-    if (hostIdx !== -1) {
+  const hostIdx = finalArgs.indexOf('--host');
+  if (hostIdx !== -1) {
+    // sanitize explicit host if preview injected 0.0.0.0 earlier (we already stripped) and ensure it's a valid mode
+    const v = finalArgs[hostIdx + 1];
+    if (v !== 'lan' && v !== 'localhost') {
       finalArgs[hostIdx + 1] = 'tunnel';
-    } else {
-      finalArgs.push('--host', 'tunnel');
     }
+  } else {
+    finalArgs.push('--host', 'tunnel');
   }
 
   console.log(`[startup] Node ${process_.version} on ${os.platform()}/${os.arch()}`);
