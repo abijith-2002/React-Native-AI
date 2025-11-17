@@ -22,9 +22,11 @@ This app uses Expo with Metro bundler. The preview environment expects the dev s
 The Metro server exposes a simple healthcheck endpoint at:
 - Path: `/healthz` (override with EXPO_PUBLIC_HEALTHCHECK_PATH)
 - Port: 3030 (override with METRO_PORT)
+- Readiness check example: `curl -i http://localhost:3030${EXPO_PUBLIC_HEALTHCHECK_PATH:-/healthz}` should return `200 OK` with a small JSON body.
 
 ## Environment
 See `.env.example` for environment variables you can configure:
 - METRO_PORT (default: 3030)
 - EXPO_DEV_HOST (default: 0.0.0.0)
 - EXPO_PUBLIC_* flags consumed by app.config.js
+- EXPO_PUBLIC_HEALTHCHECK_PATH (default: /healthz)

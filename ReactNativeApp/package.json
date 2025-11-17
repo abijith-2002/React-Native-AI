@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "prebuild:android": "expo prebuild --platform android",
     "build": "echo \"Expo preview does not use native Gradle build. Use 'npm run ci:preview' or 'npm run start' instead.\"",
-    "ci:preview": "METRO_PORT=${METRO_PORT:-3030} EXPO_DEV_HOST=0.0.0.0 expo start --host lan --clear"
+    "ci:preview": "METRO_PORT=3030 EXPO_DEV_HOST=0.0.0.0 expo start --host lan --clear",
+    "ci:healthcheck": "node -e \"const http=require('http');const path=process.env.EXPO_PUBLIC_HEALTHCHECK_PATH||'/healthz';http.get({host:'127.0.0.1',port:process.env.METRO_PORT||3030,path},res=>{if(res.statusCode===200){process.exit(0)}else{console.error('Healthcheck failed with',res.statusCode);process.exit(1)}}).on('error',e=>{console.error('Healthcheck error',e.message);process.exit(1)})\""
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",

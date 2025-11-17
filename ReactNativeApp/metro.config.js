@@ -20,7 +20,9 @@ function getMetroConfig(projectRoot) {
     const healthPath = process.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
     return (req, res, next) => {
       if (req.url && req.url.startsWith(healthPath)) {
-        res.setHeader('Content-Type', 'application/json');
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store, max-age=0');
         res.end(JSON.stringify({ status: 'ok', port: config.server.port }));
         return;
       }
