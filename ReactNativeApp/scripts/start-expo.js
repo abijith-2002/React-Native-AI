@@ -2,56 +2,74 @@
 /**
  * PUBLIC_INTERFACE
  * start-expo.js
- * This wrapper normalizes host options for expo start to be compatible with preview environments.
- * It maps invalid host inputs like "0.0.0.0" to a valid expo host mode (lan|tunnel|localhost).
- * It also respects a HOST_MODE environment variable when provided.
+ * Wrapper that normalizes host options for "expo start" in preview/CI environments.
+ * - Ensures Expo receives a valid host value (lan|tunnel|localhost).
+ * - Maps invalid inputs like "0.0.0.0" to "lan".
+ * - Ignores any extra CLI --host passed by the preview system and re-injects a valid one.
  *
  * Environment variables:
- * - HOST_MODE: one of "lan", "tunnel", "localhost". If provided, used directly.
- * - EXPO_HOST or HOST: if set to "0.0.0.0", maps to "lan" by default.
- * - EXPO_PUBLIC_TRUST_PROXY: if "true", sets HTTP(S)_PROXY trust headers for certain environments.
- * - EXPO_PUBLIC_LOG_LEVEL: passed through to process.env for expo to pick up if supported.
- * - EXPO_PUBLIC_HEALTHCHECK_PATH: passed through untouched.
- * - EXPO_PUBLIC_FEATURE_FLAGS / EXPO_PUBLIC_EXPERIMENTS_ENABLED: passed through untouched.
+ * - HOST_MODE: "lan" | "tunnel" | "localhost" (highest precedence if valid)
+ * - EXPO_HOST or HOST: if "0.0.0.0", will be normalized to "lan"; if valid, will be honored
+ * - EXPO_PUBLIC_TRUST_PROXY, EXPO_PUBLIC_LOG_LEVEL, EXPO_PUBLIC_HEALTHCHECK_PATH,
+ *   EXPO_PUBLIC_FEATURE_FLAGS, EXPO_PUBLIC_EXPERIMENTS_ENABLED: passed through in env
  */
 
 const { spawn } = require('node:child_process');
 
 function resolveHostMode() {
-  // Allow explicit override
-  const explicit = process.env.HOST_MODE && String(process.env.HOST_MODE).trim();
   const allowed = new Set(['lan', 'tunnel', 'localhost']);
+
+  // 1) Explicit override by HOST_MODE
+  const explicit = (process.env.HOST_MODE || '').trim();
   if (explicit && allowed.has(explicit)) return explicit;
 
-  // Preview systems may set EXPO_HOST or HOST to 0.0.0.0; map that to lan.
-  const envHost = (process.env.EXPO_HOST || process.env.HOST || '').trim();
-  if (envHost === '0.0.0.0') return 'lan';
+  // 2) Preview-injected raw host values
+  const envHostRaw = (process.env.EXPO_HOST || process.env.HOST || '').trim();
+  if (envHostRaw === '0.0.0.0') return 'lan';
+  if (allowed.has(envHostRaw)) return envHostRaw;
 
-  // If EXPO_HOST equals one of allowed, honor it.
-  if (allowed.has(envHost)) return envHost;
-
-  // Fallback for CI/preview where inbound connections go through a proxy
-  // "lan" typically binds to the local network interface and is widely compatible.
+  // 3) Fallback default
   return 'lan';
 }
 
+/**
+ * Remove any invalid or conflicting host flags from incoming CLI args (if the preview system
+ * appended them when invoking this script through npm). We always control the final --host.
+ */
+function sanitizeIncomingArgs(argv) {
+  const sanitized = [];
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token === '--host') {
+      // Skip this and its following value (could be 0.0.0.0)
+      i += 1;
+      continue;
+    }
+    // Also skip shorthand formats like --host=0.0.0.0
+    if (token.startsWith('--host=')) {
+      continue;
+    }
+    sanitized.push(token);
+  }
+  return sanitized;
+}
+
 function buildArgs() {
+  // Base args for expo
   const args = ['start'];
 
+  // Normalize/force a valid host
   const hostMode = resolveHostMode();
   args.push('--host', hostMode);
 
-  // When certain preview systems inject an invalid --host 0.0.0.0 at the end,
-  // we avoid passing that by being the only caller of expo with normalized args.
-  // Forward platform flags if the parent npm script requested them via env
+  // Forward platform flags via env variable set by npm scripts
   if (process.env.EXPO_TARGET === 'android') args.push('--android');
   if (process.env.EXPO_TARGET === 'ios') args.push('--ios');
   if (process.env.EXPO_TARGET === 'web') args.push('--web');
 
-  // Log level pass-through (Expo reads some envs internally)
-  const logLevel = process.env.EXPO_PUBLIC_LOG_LEVEL;
+  // Optional: set debug verbosity by env (not all CLIs accept a flag)
+  const logLevel = (process.env.EXPO_PUBLIC_LOG_LEVEL || '').trim();
   if (logLevel) {
-    // Not all expo CLIs accept --log-level; set env only
     process.env.EXPO_DEBUG = logLevel === 'debug' ? '1' : process.env.EXPO_DEBUG;
   }
 
@@ -59,12 +77,17 @@ function buildArgs() {
 }
 
 function run() {
+  // In some CI systems, npm passes any extra args after the script name.
+  // Sanitize those to ensure no conflicting --host slips through.
+  const incoming = sanitizeIncomingArgs(process.argv.slice(2));
+
   const args = buildArgs();
-  const child = spawn('npx', ['expo', ...args], {
+  const finalArgs = ['expo', ...args, ...incoming];
+
+  const child = spawn('npx', finalArgs, {
     stdio: 'inherit',
     env: {
       ...process.env,
-      // Suggest to node/expo we may be behind a proxy if configured
       TRUST_PROXY: process.env.EXPO_PUBLIC_TRUST_PROXY === 'true' ? '1' : process.env.TRUST_PROXY,
     },
     shell: false,

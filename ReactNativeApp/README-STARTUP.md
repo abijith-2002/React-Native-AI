@@ -1,6 +1,6 @@
 # Expo Startup and Build Notes
 
-This project uses a small wrapper to normalize Expo's host option in preview/CI environments.
+This project uses a wrapper to normalize Expo's host option in preview/CI environments, ensuring the app starts even if a preview system passes an invalid `--host 0.0.0.0`.
 
 - Start commands:
   - npm start
@@ -9,9 +9,10 @@ This project uses a small wrapper to normalize Expo's host option in preview/CI 
   - npm run web
 
 These call scripts/start-expo.js which:
-- Maps EXPO_HOST/HOST=0.0.0.0 to a valid Expo host (default: lan).
+- Maps EXPO_HOST/HOST=0.0.0.0 to a valid Expo host (default: `lan`).
 - Honors HOST_MODE=lan|tunnel|localhost if set.
-- Avoids passing an invalid --host to Expo, preventing startup failures.
+- Sanitizes any extra `--host` arguments injected by the preview system and re-injects a valid one.
+- Avoids passing an invalid `--host` to Expo, preventing startup failures.
 
 Environment variables (see .env.example):
 - HOST_MODE=lan|tunnel|localhost
