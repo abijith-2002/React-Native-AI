@@ -2,7 +2,7 @@
  * PUBLIC_INTERFACE
  * getAppConfig
  * Generates the Expo app configuration using environment variables.
- * Ensures dev server binds to 0.0.0.0 so external health checks can connect.
+ * Ensures Metro binds to 0.0.0.0 so external health checks can connect while Expo CLI is started with a single host flag (--lan).
  */
 function getAppConfig() {
   /** This is a public function. */

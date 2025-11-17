@@ -3,15 +3,16 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
-    "start": "METRO_PORT=${METRO_PORT:-3030} EXPO_DEV_HOST=0.0.0.0 expo start --host lan",
+    "prestart": "node scripts/sanitize-args.js",
+    "start": "METRO_PORT=${METRO_PORT:-3030} EXPO_DEV_HOST=0.0.0.0 expo start --lan --port ${METRO_PORT:-3030}",
     "start:web": "PORT=${PORT:-3030} EXPO_DEV_HOST=0.0.0.0 expo start --web",
-    "android": "METRO_PORT=${METRO_PORT:-3030} EXPO_DEV_HOST=0.0.0.0 expo start --host lan --android",
-    "ios": "METRO_PORT=${METRO_PORT:-3030} EXPO_DEV_HOST=0.0.0.0 expo start --host lan --ios",
+    "android": "METRO_PORT=${METRO_PORT:-3030} EXPO_DEV_HOST=0.0.0.0 expo start --lan --android --port ${METRO_PORT:-3030}",
+    "ios": "METRO_PORT=${METRO_PORT:-3030} EXPO_DEV_HOST=0.0.0.0 expo start --lan --ios --port ${METRO_PORT:-3030}",
     "web": "PORT=${PORT:-3030} EXPO_DEV_HOST=0.0.0.0 expo start --web",
     "lint": "eslint .",
     "prebuild:android": "expo prebuild --platform android",
     "build": "echo \"Expo preview does not use native Gradle build. Use 'npm run ci:preview' or 'npm run start' instead.\"",
-    "ci:preview": "METRO_PORT=3030 EXPO_DEV_HOST=0.0.0.0 expo start --host lan --clear",
+    "ci:preview": "METRO_PORT=3030 EXPO_DEV_HOST=0.0.0.0 expo start --lan --port 3030 --clear",
     "ci:healthcheck": "node -e \"const http=require('http');const path=process.env.EXPO_PUBLIC_HEALTHCHECK_PATH||'/healthz';http.get({host:'127.0.0.1',port:process.env.METRO_PORT||3030,path},res=>{if(res.statusCode===200){process.exit(0)}else{console.error('Healthcheck failed with',res.statusCode);process.exit(1)}}).on('error',e=>{console.error('Healthcheck error',e.message);process.exit(1)})\""
   },
   "dependencies": {

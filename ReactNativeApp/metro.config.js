@@ -4,8 +4,9 @@ import { getDefaultConfig } from '@expo/metro-config';
  * PUBLIC_INTERFACE
  * getMetroConfig
  * This function creates a Metro configuration for Expo/React Native.
- * It explicitly binds the Metro server to port 3030 and sets up a healthcheck
- * middleware so the hosting environment can determine when the server is ready.
+ * It explicitly uses METRO_PORT (default 3030) and exposes a healthcheck
+ * middleware (EXPO_PUBLIC_HEALTHCHECK_PATH, default /healthz) so the hosting environment can determine readiness.
+ * Binding to 0.0.0.0 is controlled by EXPO_DEV_HOST=0.0.0.0.
  */
 function getMetroConfig(projectRoot) {
   /** This is a public function. */

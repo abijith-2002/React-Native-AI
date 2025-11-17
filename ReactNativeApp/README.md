@@ -13,8 +13,10 @@ This app uses Expo with Metro bundler. The preview environment expects the dev s
 - The `npm run build` script is a no-op message for preview environments to avoid triggering Gradle inadvertently.
 
 ## Host and binding
-- Expo CLI must be passed a valid host value: `--host lan` (accepted: `lan|tunnel|localhost`).
-- Metro still binds to `0.0.0.0` internally so external health checks can connect. This is controlled via:
+- Expo CLI must be passed a single valid host option. We use `--lan` exclusively (equivalent to `--host lan`).
+- Do NOT pass an additional `--host 0.0.0.0`; that is invalid and conflicts with `--lan`.
+- NPM argument forwarding is sanitized by a `prestart` script to strip any extra host flags appended by external tooling.
+- Metro still binds to `0.0.0.0` so external health checks can connect. This is controlled via:
   - metro.config.js (server config and port)
   - EXPO_DEV_HOST env (defaults to `0.0.0.0`) consumed by app.config.js
 
@@ -30,3 +32,9 @@ See `.env.example` for environment variables you can configure:
 - EXPO_DEV_HOST (default: 0.0.0.0)
 - EXPO_PUBLIC_* flags consumed by app.config.js
 - EXPO_PUBLIC_HEALTHCHECK_PATH (default: /healthz)
+
+## Expected start command
+External systems should run:
+- `npm start` which resolves to:
+  - `EXPO_DEV_HOST=0.0.0.0 METRO_PORT=3030 expo start --lan --port 3030`
+- This ensures Metro binds to 0.0.0.0:3030 and the healthcheck is available.
