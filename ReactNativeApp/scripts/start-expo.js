@@ -149,16 +149,20 @@ function ensureNgrokDependencyIfTunnel() {
     return { ensured: true, reason: 'not-required' };
   }
   const expectedPath = path.join(process_.cwd(), 'node_modules', '@expo', 'ngrok');
-  try {
-    require.resolve('@expo/ngrok');
-    console.log('[deps] @expo/ngrok is present (resolve).');
+
+  // Try resolve and also verify file existence
+  const canResolve = (() => {
+    try {
+      require.resolve('@expo/ngrok');
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  if (canResolve || fs.existsSync(expectedPath)) {
+    console.log('[deps] @expo/ngrok is present.');
     return { ensured: true, reason: 'present' };
-  } catch {
-    // fall through to install
-  }
-  if (fs.existsSync(expectedPath)) {
-    console.log('[deps] @expo/ngrok is present (fs).');
-    return { ensured: true, reason: 'present-fs' };
   }
 
   console.log('[deps] @expo/ngrok not found. Installing devDependency for tunnel support (non-interactive)...');
@@ -169,30 +173,43 @@ function ensureNgrokDependencyIfTunnel() {
     EXPO_NO_TELEMETRY: '1',
     EXPO_NO_PROMPT: '1',
     EXPO_CLI_NO_PROMPT: '1',
+    EXPO_NO_INTERACTIVE: '1',
     npm_config_yes: 'true',
     npm_config_audit: 'false',
     npm_config_fund: 'false',
     npm_config_loglevel: 'error',
   };
 
-  const install = spawnSync('npm', ['i', '-D', `@expo/ngrok@${NGROK_VERSION_RANGE}`, '--no-audit', '--no-fund', '--loglevel=error'], {
+  // First attempt install
+  let install = spawnSync('npm', ['i', '-D', `@expo/ngrok@${NGROK_VERSION_RANGE}`, '--no-audit', '--no-fund', '--loglevel=error'], {
     stdio: 'inherit',
     shell: false,
     env,
   });
-  if (install.status !== 0) {
-    console.error('[deps] Failed to install @expo/ngrok automatically. Non-interactive tunnel cannot proceed safely.');
-    return { ensured: false, reason: 'install-failed' };
-  } else {
-    console.log('[deps] Installed @expo/ngrok successfully.');
+
+  // If still not resolvable, try one more synchronous attempt
+  let resolved = false;
+  if (install.status === 0) {
     try {
       require.resolve('@expo/ngrok');
+      resolved = true;
       console.log('[deps] Verified @expo/ngrok is resolvable after install.');
-    } catch (e) {
-      console.warn('[deps] @expo/ngrok still not resolvable after install:', e && e.message ? e.message : e);
+    } catch {
+      resolved = false;
     }
-    return { ensured: true, reason: 'installed' };
   }
+
+  if (!resolved) {
+    if (install.status !== 0) {
+      console.error('[deps] Failed to install @expo/ngrok automatically. Non-interactive tunnel cannot proceed safely.');
+    } else {
+      console.error('[deps] @expo/ngrok installation completed but require.resolve still fails. Aborting to avoid interactive prompt.');
+    }
+    return { ensured: false, reason: 'install-failed' };
+  }
+
+  console.log('[deps] Installed @expo/ngrok successfully.');
+  return { ensured: true, reason: 'installed' };
 }
 
 function buildArgs() {
@@ -244,21 +261,27 @@ function run() {
   process_.env.EXPO_NO_INTERACTIVE = '1';
   process_.env.EXPO_NO_TELEMETRY = '1';
   process_.env.EXPO_NO_PROMPT = '1';
+  process_.env.EXPO_CLI_NO_PROMPT = '1';
   process_.env.CI = process_.env.CI || 'true';
 
   const incoming = sanitizeIncomingArgs(process_.argv.slice(2));
   const args = buildArgs();
   const finalArgs = ['expo', ...args, ...incoming];
 
-  // Force tunnel host in CI if somehow misconfigured
+  // Force tunnel host in CI if somehow misconfigured and sanitize "0.0.0.0"
   const hostIdx = finalArgs.indexOf('--host');
   if (hostIdx !== -1) {
     const v = finalArgs[hostIdx + 1];
-    if (v !== 'lan' && v !== 'localhost') {
+    if (v === '0.0.0.0' || (v !== 'lan' && v !== 'localhost')) {
       finalArgs[hostIdx + 1] = 'tunnel';
     }
   } else {
     finalArgs.push('--host', 'tunnel');
+  }
+
+  // Always pass non-interactive explicitly
+  if (!finalArgs.includes('--non-interactive')) {
+    finalArgs.push('--non-interactive');
   }
 
   console.log(`[startup] Node ${process_.version} on ${os.platform()}/${os.arch()}`);

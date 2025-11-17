@@ -21,7 +21,7 @@ These call scripts/start-expo.js which:
   - "[healthcheck] Ready signal is up (HTTP 200)."
 - Runs Expo dev server on an internal port (3031) to avoid conflicting with the healthcheck listener, keeps `--web` enabled for UI access, and preserves tunnel mode.
 - Forces a fresh Metro cache on each CI start by clearing `.expo`, `.expo-shared`, and `node_modules/.cache/metro`, and by passing `--clear` to `expo start`. This mitigates "Unable to deserialize cloned data" errors.
-- In CI/non-interactive environments, ensures `@expo/ngrok` is installed locally before starting Expo so tunnel mode works without prompts.
+- In CI/non-interactive environments, ensures `@expo/ngrok` is installed locally before starting Expo so tunnel mode works without prompts. If `require.resolve('@expo/ngrok')` still fails at runtime, the start script performs a synchronous non-interactive install (`npm i -D @expo/ngrok@^4.1.0 --no-audit --no-fund --loglevel=error`) and aborts with a clear log if installation or resolution fails. Expo is spawned with `--non-interactive` and env `EXPO_CLI_NO_PROMPT=1`, `EXPO_NO_INTERACTIVE=1`, `EXPO_NO_TELEMETRY=1`.
 - Preview systems should invoke: `node ./scripts/start-expo.js --port 3030` (the wrapper sanitizes incoming flags, keeps 3030 reserved for health, and never passes `--host 0.0.0.0` to Expo).
 - Note: package.json cannot contain comments. This guidance is documented here for maintainers instead of inline comments in package.json.
 

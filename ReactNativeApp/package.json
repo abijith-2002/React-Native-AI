@@ -4,7 +4,7 @@
   "main": "index.ts",
   "private": true,
   "scripts": {
-    "prestart": "node -e \"try{require.resolve('@expo/ngrok')}catch(e){process.exit(require('child_process').spawnSync('npm',['i','-D','@expo/ngrok@^4.1.0','--no-audit','--no-fund','--loglevel=error'],{stdio:'inherit',env:{...process.env,CI:'true'}}).status||0)}\"",
+    "prestart": "node -e \"try{require.resolve('@expo/ngrok')}catch(e){process.exit(require('child_process').spawnSync('npm',['i','-D','@expo/ngrok@^4.1.0','--no-audit','--no-fund','--loglevel=error'],{stdio:'inherit',env:{...process.env,CI:'true',EXPO_CLI_NO_PROMPT:'1',EXPO_NO_PROMPT:'1',EXPO_NO_INTERACTIVE:'1',EXPO_NO_TELEMETRY:'1'}}).status||0)}\"",
     "start": "HOST_MODE=tunnel node ./scripts/start-expo.js --port 3030",
     "start:tunnel": "HOST_MODE=tunnel node ./scripts/start-expo.js --port 3030",
     "start:lan": "HOST_MODE=lan node ./scripts/start-expo.js --port 3030",
