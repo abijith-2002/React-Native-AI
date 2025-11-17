@@ -17,7 +17,7 @@ These call scripts/start-expo.js which:
 - Defaults to tunnel mode when not specified, to support preview across networks/Android devices.
 - Sanitizes any extra `--host` and `--port` arguments injected by the preview system and re-injects valid ones.
 - Forces `--port 3030` and enables `--web` so the preview can detect an HTTP listener on 3030.
-- Starts a lightweight healthcheck on http://localhost:3030/healthz (configurable via EXPO_PUBLIC_HEALTHCHECK_PATH).
+- Starts a lightweight healthcheck on http://0.0.0.0:3030/healthz (configurable via EXPO_PUBLIC_HEALTHCHECK_PATH).
 
 Environment variables (see .env.example):
 - HOST_MODE=lan|tunnel|localhost
