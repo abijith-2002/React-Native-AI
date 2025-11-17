@@ -20,6 +20,8 @@ These call scripts/start-expo.js which:
   - "[healthcheck] Listening on http://0.0.0.0:3030/healthz"
   - "[healthcheck] Ready signal is up (HTTP 200)."
 - Runs Expo dev server on an internal port (3031) to avoid conflicting with the healthcheck listener, keeps `--web` enabled for UI access, and preserves tunnel mode.
+- Forces a fresh Metro cache on each CI start by clearing `.expo`, `.expo-shared`, and `node_modules/.cache/metro`, and by passing `--clear` to `expo start`. This mitigates "Unable to deserialize cloned data" errors.
+- In CI/non-interactive environments, ensures `@expo/ngrok` is installed locally before starting Expo so tunnel mode works without prompts.
 - Preview systems should invoke: `node ./scripts/start-expo.js --port 3030` (the wrapper sanitizes incoming flags, keeps 3030 reserved for health, and never passes `--host 0.0.0.0` to Expo).
 - Note: package.json cannot contain comments. This guidance is documented here for maintainers instead of inline comments in package.json.
 
@@ -31,6 +33,19 @@ Environment variables (see .env.example):
 Port allocation:
 - Port 3030: health server (binds to 0.0.0.0). Should always respond with HTTP 200 on /healthz.
 - Port 3031: Expo dev server (internal). No conflict with 3030, so preview can check 3030 for readiness.
+
+CI/Preview tunnel dependency:
+- Tunnel mode uses `@expo/ngrok`. In CI, the start script auto-installs `@expo/ngrok@^4.1.0` if it's missing to avoid interactive prompts.
+- Locally, you can install it manually if needed:
+  npm i -D @expo/ngrok@^4.1.0
+
+Manual cache clear (if you run locally and see Metro deserialization issues):
+- Stop the dev server, then remove:
+  - ./.expo
+  - ./.expo-shared
+  - ./node_modules/.cache/metro
+- Then restart with:
+  npm start
 
 Android build in CI/preview:
 - The default `npm run build` is a no-op to avoid Gradle errors in environments without a generated android/ folder.

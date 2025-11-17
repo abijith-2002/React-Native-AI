@@ -16,15 +16,22 @@
  *   EXPO_PUBLIC_FEATURE_FLAGS, EXPO_PUBLIC_EXPERIMENTS_ENABLED
  */
 
-const { spawn } = require('node:child_process'); // CJS
+const { spawn, spawnSync } = require('node:child_process'); // CJS
 const http = require('node:http'); // CJS
 const process_ = require('node:process'); // CJS
 const os = require('node:os'); // CJS
+const fs = require('node:fs');
+const path = require('node:path');
 
 const DEFAULT_PORT = 3030;
 const EXPO_INTERNAL_FALLBACK_PORT = 3031; // Expo dev server
 
 // PUBLIC_INTERFACE
+function isCIMode() {
+  const ci = (process_.env.CI || '').toString().toLowerCase();
+  return ci === '1' || ci === 'true' || ci === 'yes';
+}
+
 function startHealthcheckServer(port, path) {
   const healthPath = path || process_.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
 
@@ -67,6 +74,30 @@ function startHealthcheckServer(port, path) {
 }
 
 // PUBLIC_INTERFACE
+function rimrafSafe(targetPath) {
+  try {
+    if (fs.existsSync(targetPath)) {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+      console.log(`[cache] Removed: ${targetPath}`);
+    }
+  } catch (e) {
+    console.warn(`[cache] Failed to remove ${targetPath}: ${e && e.message ? e.message : e}`);
+  }
+}
+
+function resetMetroAndExpoCaches() {
+  const root = process_.cwd();
+  const candidates = [
+    path.join(root, '.expo'),
+    path.join(root, '.expo-shared'),
+    path.join(root, 'node_modules', '.cache', 'metro'),
+  ];
+  console.log('[cache] Resetting Metro/Expo caches...');
+  for (const p of candidates) {
+    rimrafSafe(p);
+  }
+}
+
 function resolveHostMode() {
   const allowed = new Set(['lan', 'tunnel', 'localhost']);
 
@@ -108,6 +139,29 @@ function sanitizeIncomingArgs(argv) {
 }
 
 // PUBLIC_INTERFACE
+function ensureNgrokDependency() {
+  const expectedPath = path.join(process_.cwd(), 'node_modules', '@expo', 'ngrok');
+  if (fs.existsSync(expectedPath)) {
+    console.log('[deps] @expo/ngrok is present.');
+    return;
+  }
+  if (!isCIMode()) {
+    console.log('[deps] @expo/ngrok not found, but not in CI mode; proceeding without auto-install.');
+    return;
+  }
+  console.log('[deps] @expo/ngrok not found. Installing devDependency for tunnel support in CI...');
+  const install = spawnSync('npm', ['i', '-D', '@expo/ngrok@^4.1.0'], {
+    stdio: 'inherit',
+    shell: false,
+    env: { ...process_.env, CI: process_.env.CI || 'true' },
+  });
+  if (install.status !== 0) {
+    console.warn('[deps] Failed to install @expo/ngrok automatically. Expo tunnel may prompt or fail in CI.');
+  } else {
+    console.log('[deps] Installed @expo/ngrok successfully.');
+  }
+}
+
 function buildArgs() {
   const args = ['start'];
 
@@ -116,6 +170,9 @@ function buildArgs() {
 
   // Reserve 3030 for health server; run expo on internal port
   args.push('--port', String(EXPO_INTERNAL_FALLBACK_PORT));
+
+  // Force clearing Metro cache to avoid deserialization errors
+  args.push('--clear');
 
   if (process_.env.EXPO_TARGET === 'android') args.push('--android');
   if (process_.env.EXPO_TARGET === 'ios') args.push('--ios');
@@ -134,14 +191,29 @@ function run() {
   const healthPath = process_.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
   startHealthcheckServer(DEFAULT_PORT, healthPath);
 
+  // Ensure ngrok is present in CI for tunnel mode and reset caches
+  ensureNgrokDependency();
+  resetMetroAndExpoCaches();
+
   const incoming = sanitizeIncomingArgs(process_.argv.slice(2));
   const args = buildArgs();
   const finalArgs = ['expo', ...args, ...incoming];
 
+  // Force tunnel host in CI if somehow misconfigured
+  if (isCIMode()) {
+    const hostIdx = finalArgs.indexOf('--host');
+    if (hostIdx !== -1) {
+      finalArgs[hostIdx + 1] = 'tunnel';
+    } else {
+      finalArgs.push('--host', 'tunnel');
+    }
+  }
+
   console.log(`[startup] Node ${process_.version} on ${os.platform()}/${os.arch()}`);
   console.log(`[startup] Running: npx ${finalArgs.join(' ')}`);
   console.log(`[startup] Healthcheck path: http://0.0.0.0:${DEFAULT_PORT}${healthPath}`);
-  console.log(`[startup] Host mode: ${args[args.indexOf('--host') + 1]}`);
+  const hostIdx2 = finalArgs.indexOf('--host');
+  console.log(`[startup] Host mode: ${hostIdx2 !== -1 ? finalArgs[hostIdx2 + 1] : 'unknown'}`);
   console.log(`[startup] Expo internal port: ${EXPO_INTERNAL_FALLBACK_PORT}`);
   console.log('[startup] Port 3030 reserved for healthcheck; Expo binds internal port. If health server is up, preview should mark 3030 ready.');
 
@@ -151,6 +223,9 @@ function run() {
       ...process_.env,
       TRUST_PROXY: process_.env.EXPO_PUBLIC_TRUST_PROXY === 'true' ? '1' : process_.env.TRUST_PROXY,
       CI: process_.env.CI || 'true',
+      EXPO_NO_INTERACTIVE: '1',
+      // Avoid any prompts
+      ADB_INSTALL_TIMEOUT: process_.env.ADB_INSTALL_TIMEOUT || '10',
     },
     shell: false,
   });
