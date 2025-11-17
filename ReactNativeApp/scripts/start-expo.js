@@ -4,14 +4,14 @@
  * start-expo.js
  * Wrapper that normalizes host options for "expo start" in preview/CI environments.
  * - Ensures Expo receives a valid host value (lan|tunnel|localhost).
- * - Maps invalid inputs like "0.0.0.0" to a supported mode.
+ * - Maps invalid inputs like "0.0.0.0" to a supported mode (tunnel).
  * - Sanitizes and ignores preview-injected --host/--port flags, reinjecting valid ones.
  * - Always binds a standalone HTTP healthcheck server on 0.0.0.0:3030 that returns 200 on /healthz (configurable).
  * - Runs Expo with stdio inherited and without daemonizing.
  *
  * Environment variables:
  * - HOST_MODE: "lan" | "tunnel" | "localhost" (highest precedence if valid)
- * - EXPO_HOST or HOST: if "0.0.0.0", will be normalized to 'tunnel'; if valid, will be honored
+ * - EXPO_HOST or HOST: if "0.0.0.0", will be normalized to "tunnel"; if valid, will be honored
  * - EXPO_PUBLIC_TRUST_PROXY, EXPO_PUBLIC_LOG_LEVEL, EXPO_PUBLIC_HEALTHCHECK_PATH,
  *   EXPO_PUBLIC_FEATURE_FLAGS, EXPO_PUBLIC_EXPERIMENTS_ENABLED: passed through in env
  */
@@ -21,7 +21,7 @@ const http = require('node:http');
 const process_ = require('node:process');
 
 const DEFAULT_PORT = 3030;
-const EXPO_INTERNAL_FALLBACK_PORT = 3031; // Internal fallback for Expo if 3030 is reserved for healthcheck
+const EXPO_INTERNAL_FALLBACK_PORT = 3031; // Internal port for Expo so 3030 can be used by healthcheck
 
 /**
  * PUBLIC_INTERFACE
@@ -33,13 +33,13 @@ const EXPO_INTERNAL_FALLBACK_PORT = 3031; // Internal fallback for Expo if 3030 
 function startHealthcheckServer(port, path) {
   const healthPath = path || process_.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
 
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => {
     const url = (req && req.url) || '/';
     const isHealth = url === healthPath || url.startsWith(healthPath + '?');
 
     if (isHealth) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok' }));
+      res.end(JSON.stringify({ status: 'ok', port, path: healthPath }));
       return;
     }
 
@@ -49,13 +49,15 @@ function startHealthcheckServer(port, path) {
 
   server.on('listening', () => {
     console.log(`[healthcheck] Listening on http://0.0.0.0:${port}${healthPath}`);
+    console.log('[healthcheck] Ready signal is up (HTTP 200).');
   });
 
   server.on('error', (err) => {
+    const code = err && err.code;
     const msg = String(err && (err.message || err));
-    if (msg.includes('EADDRINUSE')) {
-      console.warn(`[healthcheck] Port ${port} already in use. To ensure a stable 200 on ${healthPath}, we will run Expo on an internal port and keep this dedicated server on ${port}.`);
-      // We still mark as bound false; we'll proceed but warn that readiness may depend on Expo if we can't bind.
+    if (code === 'EADDRINUSE' || msg.includes('EADDRINUSE')) {
+      console.warn(`[healthcheck] Port ${port} already in use. Ensure nothing else binds to ${port}.`);
+      console.warn('[healthcheck] Preview readiness depends on this server binding successfully.');
       return;
     }
     console.warn(`[healthcheck] Could not bind on port ${port}: ${msg}`);
@@ -96,21 +98,30 @@ function resolveHostMode() {
  * PUBLIC_INTERFACE
  * sanitizeIncomingArgs
  * Remove any invalid or conflicting host/port flags from incoming CLI args.
+ * Also remove any unknown flags that preview might inject which could cause Expo to error.
  */
 function sanitizeIncomingArgs(argv) {
   const sanitized = [];
+  const dropNext = new Set(['--host', '--port']);
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
-    if (token === '--host' || token === '--port') {
+
+    // Drop paired flags and their value
+    if (dropNext.has(token)) {
       i += 1;
       continue;
     }
+
+    // Drop inline assignments
     if (typeof token === 'string' && (token.startsWith('--host=') || token.startsWith('--port='))) {
       continue;
     }
+
+    // Drop preview-only flags that Expo doesn't recognize
     if (token === '--non-interactive' || token === '--ci') {
       continue;
     }
+
     sanitized.push(token);
   }
   return sanitized;
@@ -125,13 +136,14 @@ function sanitizeIncomingArgs(argv) {
 function buildArgs() {
   const args = ['start'];
 
+  // Map "0.0.0.0" to a valid host mode (tunnel) and never pass raw "0.0.0.0" to Expo
   const hostMode = resolveHostMode();
   args.push('--host', hostMode);
 
-  // Bind Expo on an internal port to avoid colliding with healthcheck on 3030
+  // Bind Expo on an internal port to avoid colliding with the healthcheck on 3030
   args.push('--port', String(EXPO_INTERNAL_FALLBACK_PORT));
 
-  // Ensure the dev UI is available; do not pass invalid flags
+  // Select platform targets if specified
   if (process_.env.EXPO_TARGET === 'android') args.push('--android');
   if (process_.env.EXPO_TARGET === 'ios') args.push('--ios');
   args.push('--web');
@@ -153,6 +165,7 @@ function run() {
   const healthPath = process_.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
   startHealthcheckServer(DEFAULT_PORT, healthPath);
 
+  // Drop any preview-injected flags that might conflict (e.g., --host 0.0.0.0 or --port 3030)
   const incoming = sanitizeIncomingArgs(process_.argv.slice(2));
   const args = buildArgs();
   const finalArgs = ['expo', ...args, ...incoming];
@@ -161,6 +174,7 @@ function run() {
   console.log(`[startup] Healthcheck path: http://0.0.0.0:${DEFAULT_PORT}${healthPath}`);
   console.log(`[startup] Host mode: ${args[args.indexOf('--host') + 1]}`);
   console.log(`[startup] Expo internal port: ${EXPO_INTERNAL_FALLBACK_PORT}`);
+  console.log('[startup] Note: Port 3030 is reserved for healthcheck only; Expo runs on an internal port.');
 
   const child = spawn('npx', finalArgs, {
     stdio: 'inherit',

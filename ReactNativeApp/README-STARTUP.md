@@ -1,6 +1,6 @@
 # Expo Startup and Build Notes
 
-This project uses a wrapper to normalize Expo's host option in preview/CI environments, ensuring the app starts even if a preview system passes an invalid `--host 0.0.0.0`. It also configures the dev server to bind to port 3030 and exposes a readiness healthcheck that the preview system can detect.
+This project uses a Node (CommonJS) wrapper to normalize Expo's host option in preview/CI environments, ensuring the app starts even if a preview system passes an invalid `--host 0.0.0.0`. It reserves port 3030 for a dedicated healthcheck HTTP server and runs Expo on a separate internal port so that readiness detection is reliable.
 
 - Start commands:
   - npm start (defaults to tunnel mode)
@@ -12,18 +12,20 @@ This project uses a wrapper to normalize Expo's host option in preview/CI enviro
   - npm run web (defaults to tunnel; override with HOST_MODE=lan)
 
 These call scripts/start-expo.js which:
-- Maps EXPO_HOST/HOST=0.0.0.0 to a valid Expo host.
+- Maps EXPO_HOST/HOST=0.0.0.0 to a valid Expo host (tunnel).
 - Honors HOST_MODE=lan|tunnel|localhost if set (highest precedence).
 - Defaults to tunnel mode when not specified, to support preview across networks/Android devices.
 - Sanitizes any extra `--host` and `--port` arguments injected by the preview system and re-injects valid ones.
-- Starts a lightweight standalone healthcheck server on http://0.0.0.0:3030/healthz (configurable via EXPO_PUBLIC_HEALTHCHECK_PATH) that always returns 200.
+- Starts a lightweight standalone healthcheck server on http://0.0.0.0:3030/healthz (configurable via EXPO_PUBLIC_HEALTHCHECK_PATH) that always returns 200. It logs:
+  - "[healthcheck] Listening on http://0.0.0.0:3030/healthz"
+  - "[healthcheck] Ready signal is up (HTTP 200)."
 - Runs Expo dev server on an internal port (3031) to avoid conflicting with the healthcheck listener, keeps `--web` enabled for UI access, and preserves tunnel mode.
-- Preview systems should invoke: `node ./scripts/start-expo.js --port 3030` (the wrapper ignores/normalizes conflicting flags and keeps 3030 reserved for health).
+- Preview systems should invoke: `node ./scripts/start-expo.js --port 3030` (the wrapper sanitizes incoming flags, keeps 3030 reserved for health, and never passes `--host 0.0.0.0` to Expo).
 - Note: package.json cannot contain comments. This guidance is documented here for maintainers instead of inline comments in package.json.
 
 Environment variables (see .env.example):
 - HOST_MODE=lan|tunnel|localhost
-- EXPO_HOST / HOST (if '0.0.0.0', wrapper maps to 'lan')
+- EXPO_HOST / HOST (if '0.0.0.0', wrapper maps to 'tunnel')
 - EXPO_PUBLIC_TRUST_PROXY, EXPO_PUBLIC_LOG_LEVEL, EXPO_PUBLIC_HEALTHCHECK_PATH, etc.
 
 Android build in CI/preview:
