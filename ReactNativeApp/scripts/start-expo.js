@@ -25,6 +25,7 @@ const path = require('node:path');
 
 const DEFAULT_PORT = 3030;
 const EXPO_INTERNAL_FALLBACK_PORT = 3031; // Expo dev server
+const NGROK_VERSION_RANGE = '^4.1.0';
 
 // PUBLIC_INTERFACE
 function isCIMode() {
@@ -141,16 +142,25 @@ function sanitizeIncomingArgs(argv) {
 // PUBLIC_INTERFACE
 function ensureNgrokDependencyIfTunnel() {
   const hostMode = resolveHostMode();
-  // Only ensure ngrok when using tunnel
-  if (hostMode !== 'tunnel' && !isCIMode()) {
+  const needNgrok = hostMode === 'tunnel' || isCIMode();
+  // Only ensure ngrok when using tunnel or in CI to preempt prompts
+  if (!needNgrok) {
     console.log(`[deps] Host mode is "${hostMode}". Skipping @expo/ngrok ensure.`);
-    return;
+    return { ensured: true, reason: 'not-required' };
   }
   const expectedPath = path.join(process_.cwd(), 'node_modules', '@expo', 'ngrok');
-  if (fs.existsSync(expectedPath)) {
-    console.log('[deps] @expo/ngrok is present.');
-    return;
+  try {
+    require.resolve('@expo/ngrok');
+    console.log('[deps] @expo/ngrok is present (resolve).');
+    return { ensured: true, reason: 'present' };
+  } catch {
+    // fall through to install
   }
+  if (fs.existsSync(expectedPath)) {
+    console.log('[deps] @expo/ngrok is present (fs).');
+    return { ensured: true, reason: 'present-fs' };
+  }
+
   console.log('[deps] @expo/ngrok not found. Installing devDependency for tunnel support (non-interactive)...');
 
   const env = {
@@ -162,17 +172,26 @@ function ensureNgrokDependencyIfTunnel() {
     npm_config_yes: 'true',
     npm_config_audit: 'false',
     npm_config_fund: 'false',
+    npm_config_loglevel: 'error',
   };
 
-  const install = spawnSync('npm', ['i', '-D', '@expo/ngrok@^4.1.0'], {
+  const install = spawnSync('npm', ['i', '-D', `@expo/ngrok@${NGROK_VERSION_RANGE}`, '--no-audit', '--no-fund', '--loglevel=error'], {
     stdio: 'inherit',
     shell: false,
     env,
   });
   if (install.status !== 0) {
-    console.warn('[deps] Failed to install @expo/ngrok automatically. Expo tunnel may prompt or fail in CI.');
+    console.error('[deps] Failed to install @expo/ngrok automatically. Non-interactive tunnel cannot proceed safely.');
+    return { ensured: false, reason: 'install-failed' };
   } else {
     console.log('[deps] Installed @expo/ngrok successfully.');
+    try {
+      require.resolve('@expo/ngrok');
+      console.log('[deps] Verified @expo/ngrok is resolvable after install.');
+    } catch (e) {
+      console.warn('[deps] @expo/ngrok still not resolvable after install:', e && e.message ? e.message : e);
+    }
+    return { ensured: true, reason: 'installed' };
   }
 }
 
@@ -211,7 +230,13 @@ function run() {
   startHealthcheckServer(DEFAULT_PORT, healthPath);
 
   // Ensure ngrok is present for tunnel mode BEFORE spawning expo and reset caches
-  ensureNgrokDependencyIfTunnel();
+  const ngrokEnsure = ensureNgrokDependencyIfTunnel();
+  if (ngrokEnsure.ensured) {
+    console.log(`[startup] @expo/ngrok ready (reason: ${ngrokEnsure.reason}).`);
+  } else {
+    console.error(`[startup] @expo/ngrok not available (reason: ${ngrokEnsure.reason}). Aborting to avoid interactive prompts.`);
+    process_.exit(1);
+  }
   resetMetroAndExpoCaches();
 
   // Enforce non-interactive environment for both install and expo
@@ -228,7 +253,6 @@ function run() {
   // Force tunnel host in CI if somehow misconfigured
   const hostIdx = finalArgs.indexOf('--host');
   if (hostIdx !== -1) {
-    // sanitize explicit host if preview injected 0.0.0.0 earlier (we already stripped) and ensure it's a valid mode
     const v = finalArgs[hostIdx + 1];
     if (v !== 'lan' && v !== 'localhost') {
       finalArgs[hostIdx + 1] = 'tunnel';
@@ -257,7 +281,7 @@ function run() {
   };
 
   const child = spawn('npx', finalArgs, {
-    stdio: 'inherit', // keep logs visible and keep process alive
+    stdio: 'inherit',
     env: childEnv,
     shell: false,
   });
