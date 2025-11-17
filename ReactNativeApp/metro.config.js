@@ -1,0 +1,33 @@
+import { getDefaultConfig } from '@expo/metro-config';
+
+/**
+ * PUBLIC_INTERFACE
+ * getMetroConfig
+ * This function creates a Metro configuration for Expo/React Native.
+ * It explicitly binds the Metro server to port 3030 and sets up a healthcheck
+ * middleware so the hosting environment can determine when the server is ready.
+ */
+function getMetroConfig(projectRoot) {
+  /** This is a public function. */
+  const config = getDefaultConfig(projectRoot);
+
+  // Ensure the server listens on the interface and port expected by the preview
+  config.server = config.server || {};
+  config.server.port = Number(process.env.METRO_PORT || 3030);
+  config.server.enhanceMiddleware = (middleware) => {
+    // Add a simple healthcheck route. Defaults to /healthz if not explicitly provided.
+    const healthPath = process.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
+    return (req, res, next) => {
+      if (req.url && req.url.startsWith(healthPath)) {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ status: 'ok', port: config.server.port }));
+        return;
+      }
+      return middleware(req, res, next);
+    };
+  };
+
+  return config;
+}
+
+export default getMetroConfig(__dirname);

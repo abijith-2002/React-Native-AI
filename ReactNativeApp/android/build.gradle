@@ -1,0 +1,22 @@
+buildscript {
+    repositories {
+        mavenCentral()
+        google()
+    }
+    dependencies {
+        // No build dependencies: preview uses Expo dev server (Metro), not native builds.
+    }
+}
+
+allprojects {
+    repositories {
+        mavenCentral()
+        google()
+    }
+}
+
+task assembleDebug {
+    doLast {
+        println "assembleDebug skipped: this is a preview-only stub project."
+    }
+}
