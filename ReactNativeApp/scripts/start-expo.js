@@ -32,8 +32,8 @@ function isCIMode() {
   return ci === '1' || ci === 'true' || ci === 'yes';
 }
 
-function startHealthcheckServer(port, path) {
-  const healthPath = path || process_.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
+function startHealthcheckServer(port, pth) {
+  const healthPath = pth || process_.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
 
   const server = http.createServer((req, res) => {
     const url = (req && req.url) || '/';
@@ -145,15 +145,22 @@ function ensureNgrokDependency() {
     console.log('[deps] @expo/ngrok is present.');
     return;
   }
-  if (!isCIMode()) {
-    console.log('[deps] @expo/ngrok not found, but not in CI mode; proceeding without auto-install.');
-    return;
-  }
-  console.log('[deps] @expo/ngrok not found. Installing devDependency for tunnel support in CI...');
+  console.log('[deps] @expo/ngrok not found. Installing devDependency for tunnel support (non-interactive)...');
+
+  // Force non-interactive installation so CI does not hang
+  const env = {
+    ...process_.env,
+    CI: process_.env.CI || 'true',
+    EXPO_NO_TELEMETRY: '1',
+    EXPO_NO_PROMPT: '1',
+    EXPO_CLI_NO_PROMPT: '1',
+    npm_config_yes: 'true',
+  };
+
   const install = spawnSync('npm', ['i', '-D', '@expo/ngrok@^4.1.0'], {
     stdio: 'inherit',
     shell: false,
-    env: { ...process_.env, CI: process_.env.CI || 'true' },
+    env,
   });
   if (install.status !== 0) {
     console.warn('[deps] Failed to install @expo/ngrok automatically. Expo tunnel may prompt or fail in CI.');
@@ -174,6 +181,9 @@ function buildArgs() {
   // Force clearing Metro cache to avoid deserialization errors
   args.push('--clear');
 
+  // Force non-interactive CLI behavior
+  args.push('--non-interactive');
+
   if (process_.env.EXPO_TARGET === 'android') args.push('--android');
   if (process_.env.EXPO_TARGET === 'ios') args.push('--ios');
   args.push('--web');
@@ -191,7 +201,7 @@ function run() {
   const healthPath = process_.env.EXPO_PUBLIC_HEALTHCHECK_PATH || '/healthz';
   startHealthcheckServer(DEFAULT_PORT, healthPath);
 
-  // Ensure ngrok is present in CI for tunnel mode and reset caches
+  // Ensure ngrok is present for tunnel mode and reset caches
   ensureNgrokDependency();
   resetMetroAndExpoCaches();
 
@@ -217,16 +227,20 @@ function run() {
   console.log(`[startup] Expo internal port: ${EXPO_INTERNAL_FALLBACK_PORT}`);
   console.log('[startup] Port 3030 reserved for healthcheck; Expo binds internal port. If health server is up, preview should mark 3030 ready.');
 
+  const childEnv = {
+    ...process_.env,
+    TRUST_PROXY: process_.env.EXPO_PUBLIC_TRUST_PROXY === 'true' ? '1' : process_.env.TRUST_PROXY,
+    CI: process_.env.CI || 'true',
+    EXPO_NO_INTERACTIVE: '1',
+    EXPO_NO_TELEMETRY: '1',
+    EXPO_NO_PROMPT: '1',
+    EXPO_CLI_NO_PROMPT: '1',
+    ADB_INSTALL_TIMEOUT: process_.env.ADB_INSTALL_TIMEOUT || '10',
+  };
+
   const child = spawn('npx', finalArgs, {
     stdio: 'inherit', // keep logs visible and keep process alive
-    env: {
-      ...process_.env,
-      TRUST_PROXY: process_.env.EXPO_PUBLIC_TRUST_PROXY === 'true' ? '1' : process_.env.TRUST_PROXY,
-      CI: process_.env.CI || 'true',
-      EXPO_NO_INTERACTIVE: '1',
-      // Avoid any prompts
-      ADB_INSTALL_TIMEOUT: process_.env.ADB_INSTALL_TIMEOUT || '10',
-    },
+    env: childEnv,
     shell: false,
   });
 
