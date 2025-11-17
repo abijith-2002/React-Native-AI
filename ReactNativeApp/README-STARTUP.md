@@ -3,15 +3,19 @@
 This project uses a wrapper to normalize Expo's host option in preview/CI environments, ensuring the app starts even if a preview system passes an invalid `--host 0.0.0.0`.
 
 - Start commands:
-  - npm start
-  - npm run android
-  - npm run ios
-  - npm run web
+  - npm start (defaults to tunnel mode)
+  - npm run start:tunnel
+  - npm run start:lan
+  - npm run start:localhost
+  - npm run android (defaults to tunnel; override with HOST_MODE=lan)
+  - npm run ios (defaults to tunnel; override with HOST_MODE=lan)
+  - npm run web (defaults to tunnel; override with HOST_MODE=lan)
 
 These call scripts/start-expo.js which:
-- Maps EXPO_HOST/HOST=0.0.0.0 to a valid Expo host (default: `lan`).
-- Honors HOST_MODE=lan|tunnel|localhost if set.
-- Sanitizes any extra `--host` arguments injected by the preview system and re-injects a valid one.
+- Maps EXPO_HOST/HOST=0.0.0.0 to a valid Expo host.
+- Honors HOST_MODE=lan|tunnel|localhost if set (highest precedence).
+- Defaults to tunnel mode when not specified, to support preview across networks/Android devices.
+- Sanitizes any extra `--host` arguments injected by the preview system (e.g., `--host 0.0.0.0`) and re-injects a valid one.
 - Avoids passing an invalid `--host` to Expo, preventing startup failures.
 
 Environment variables (see .env.example):

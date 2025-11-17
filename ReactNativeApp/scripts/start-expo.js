@@ -14,7 +14,7 @@
  *   EXPO_PUBLIC_FEATURE_FLAGS, EXPO_PUBLIC_EXPERIMENTS_ENABLED: passed through in env
  */
 
-const { spawn } = require('node:child_process');
+import { spawn } from 'node:child_process';
 
 function resolveHostMode() {
   const allowed = new Set(['lan', 'tunnel', 'localhost']);
@@ -28,8 +28,8 @@ function resolveHostMode() {
   if (envHostRaw === '0.0.0.0') return 'lan';
   if (allowed.has(envHostRaw)) return envHostRaw;
 
-  // 3) Fallback default
-  return 'lan';
+  // 3) Fallback default (force tunnel for preview usability across networks)
+  return 'tunnel';
 }
 
 /**
