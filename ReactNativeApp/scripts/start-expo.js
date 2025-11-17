@@ -144,25 +144,25 @@ function ensureNgrokDependencyIfTunnel() {
   const hostMode = resolveHostMode();
   const needNgrok = hostMode === 'tunnel' || isCIMode();
   // Only ensure ngrok when using tunnel or in CI to preempt prompts
-  if (!needNgrok) {
-    console.log(`[deps] Host mode is "${hostMode}". Skipping @expo/ngrok ensure.`);
-    return { ensured: true, reason: 'not-required' };
-  }
   const expectedPath = path.join(process_.cwd(), 'node_modules', '@expo', 'ngrok');
 
-  // Try resolve and also verify file existence
-  const canResolve = (() => {
-    try {
-      require.resolve('@expo/ngrok');
-      return true;
-    } catch {
-      return false;
-    }
-  })();
+  // Always run a strict resolve check first to avoid runtime prompt
+  let resolved = false;
+  try {
+    require.resolve('@expo/ngrok');
+    resolved = true;
+  } catch {
+    resolved = false;
+  }
 
-  if (canResolve || fs.existsSync(expectedPath)) {
-    console.log('[deps] @expo/ngrok is present.');
+  if (resolved || fs.existsSync(expectedPath)) {
+    console.log('[deps] @expo/ngrok is present (require.resolve succeeded).');
     return { ensured: true, reason: 'present' };
+  }
+
+  if (!needNgrok) {
+    console.log(`[deps] Host mode is "${hostMode}" and ngrok not required. Skipping installation.`);
+    return { ensured: true, reason: 'not-required' };
   }
 
   console.log('[deps] @expo/ngrok not found. Installing devDependency for tunnel support (non-interactive)...');
@@ -170,46 +170,36 @@ function ensureNgrokDependencyIfTunnel() {
   const env = {
     ...process_.env,
     CI: process_.env.CI || 'true',
-    EXPO_NO_TELEMETRY: '1',
-    EXPO_NO_PROMPT: '1',
     EXPO_CLI_NO_PROMPT: '1',
     EXPO_NO_INTERACTIVE: '1',
+    EXPO_NO_TELEMETRY: '1',
+    EXPO_NO_PROMPT: '1',
     npm_config_yes: 'true',
     npm_config_audit: 'false',
     npm_config_fund: 'false',
     npm_config_loglevel: 'error',
   };
 
-  // First attempt install
-  let install = spawnSync('npm', ['i', '-D', `@expo/ngrok@${NGROK_VERSION_RANGE}`, '--no-audit', '--no-fund', '--loglevel=error'], {
+  const install = spawnSync('npm', ['install', '-D', `@expo/ngrok@${NGROK_VERSION_RANGE}`, '--no-audit', '--no-fund', '--loglevel=error'], {
     stdio: 'inherit',
-    shell: false,
     env,
+    shell: false,
   });
 
-  // If still not resolvable, try one more synchronous attempt
-  let resolved = false;
-  if (install.status === 0) {
-    try {
-      require.resolve('@expo/ngrok');
-      resolved = true;
-      console.log('[deps] Verified @expo/ngrok is resolvable after install.');
-    } catch {
-      resolved = false;
-    }
-  }
-
-  if (!resolved) {
-    if (install.status !== 0) {
-      console.error('[deps] Failed to install @expo/ngrok automatically. Non-interactive tunnel cannot proceed safely.');
-    } else {
-      console.error('[deps] @expo/ngrok installation completed but require.resolve still fails. Aborting to avoid interactive prompt.');
-    }
+  if (install.status !== 0) {
+    console.error('[deps] Failed to install @expo/ngrok automatically. Aborting to avoid interactive prompt.');
     return { ensured: false, reason: 'install-failed' };
-  }
+    }
 
-  console.log('[deps] Installed @expo/ngrok successfully.');
-  return { ensured: true, reason: 'installed' };
+  // Verify resolution post-install
+  try {
+    require.resolve('@expo/ngrok');
+    console.log('[deps] Verified @expo/ngrok is resolvable after install.');
+    return { ensured: true, reason: 'installed' };
+  } catch {
+    console.error('[deps] @expo/ngrok installation completed but require.resolve still fails. Aborting.');
+    return { ensured: false, reason: 'resolve-failed' };
+  }
 }
 
 function buildArgs() {
@@ -261,14 +251,13 @@ function run() {
   process_.env.EXPO_NO_INTERACTIVE = '1';
   process_.env.EXPO_NO_TELEMETRY = '1';
   process_.env.EXPO_NO_PROMPT = '1';
-  process_.env.EXPO_CLI_NO_PROMPT = '1';
   process_.env.CI = process_.env.CI || 'true';
 
   const incoming = sanitizeIncomingArgs(process_.argv.slice(2));
   const args = buildArgs();
   const finalArgs = ['expo', ...args, ...incoming];
 
-  // Force tunnel host in CI if somehow misconfigured and sanitize "0.0.0.0"
+  // Force tunnel host and sanitize any invalid values like "0.0.0.0"
   const hostIdx = finalArgs.indexOf('--host');
   if (hostIdx !== -1) {
     const v = finalArgs[hostIdx + 1];
@@ -285,6 +274,7 @@ function run() {
   }
 
   console.log(`[startup] Node ${process_.version} on ${os.platform()}/${os.arch()}`);
+  console.log(`[startup] Confirmed @expo/ngrok installed, spawning Expo in non-interactive mode...`);
   console.log(`[startup] Running: npx ${finalArgs.join(' ')}`);
   console.log(`[startup] Healthcheck path: http://0.0.0.0:${DEFAULT_PORT}${healthPath}`);
   const hostIdx2 = finalArgs.indexOf('--host');
@@ -302,6 +292,11 @@ function run() {
     EXPO_CLI_NO_PROMPT: '1',
     ADB_INSTALL_TIMEOUT: process_.env.ADB_INSTALL_TIMEOUT || '10',
   };
+
+  // Ensure explicit non-interactive env flags for Expo
+  childEnv.EXPO_CLI_NO_PROMPT = '1';
+  childEnv.EXPO_NO_INTERACTIVE = '1';
+  childEnv.EXPO_NO_TELEMETRY = '1';
 
   const child = spawn('npx', finalArgs, {
     stdio: 'inherit',
